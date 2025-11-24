@@ -11,9 +11,9 @@ from huggingface_hub import hf_hub_download
 
 logger = logging.getLogger(__name__)
 
-# Model details (Updated to reference the GGUF file)
-GGUF_MODEL_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
-GGUF_MODEL_FILE = "qwen2.5-1.5b-instruct-q4_k_m.gguf" # Q4_K_M is a good balance of speed/quality
+# Model details (UPGRADE TO MISTRAL-7B-INSTRUCT-V0.2 FOR BETTER QUALITY/INSTRUCTION FOLLOWING)
+GGUF_MODEL_REPO = "TheBloke/Mistral-7B-Instruct-v0.2-GGUF"
+GGUF_MODEL_FILE = "mistral-7b-instruct-v0.2.Q4_K_M.gguf" 
 MODEL_NAME = GGUF_MODEL_REPO # Use the repo name for the logs
 
 # Global variables to hold model components
@@ -54,12 +54,13 @@ def initialize_llm():
         
         # NOTE: n_ctx controls context size (max tokens). Set to 2048 for a balance.
         # NOTE: n_threads is crucial for CPU performance, set it to 4 or higher if available.
+        # Set n_ctx higher to accommodate the larger model and context.
         llm_model = Llama(
             model_path=MODEL_PATH,
-            n_ctx=2048,           # Context window size
+            n_ctx=4096,           # Increased context window for the 7B model
             n_gpu_layers=0,       # Force CPU only (0 layers)
             verbose=False,        # Suppress Llama.cpp boilerplate logs
-            n_threads=4           # Use 4 CPU threads for inference (adjust based on machine)
+            n_threads=6           # Increased threads for the larger model (adjust based on machine)
         )
         
         logger.info("GGUF Model loaded successfully via llama-cpp-python.")
@@ -73,7 +74,7 @@ def initialize_llm():
 
 def create_prompt_messages(language: str, cwe: str, code: str) -> list:
     """
-    Creates the structured instruction prompt for the Llama model using the chat template.
+    Creates the structured instruction prompt for the LLM using the chat template.
     The response is guided to use specific XML-like tags for robust parsing.
     """
     
@@ -111,7 +112,7 @@ def create_prompt_messages(language: str, cwe: str, code: str) -> list:
         f"```\n{code.strip()}\n```"
     )
 
-    # Qwen instruction template format (used by llama_cpp for Qwen models)
+    # The Mistral/Llama chat template uses simple user/system roles
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_query}
@@ -119,7 +120,7 @@ def create_prompt_messages(language: str, cwe: str, code: str) -> list:
     
     return messages
 
-# --- Utility Function: Output Parsing (Remains the same) ---
+# --- Utility Function: Output Parsing ---
 
 def parse_model_output(output: str) -> dict:
     """Parses the structured output from the LLM based on defined tags."""
@@ -129,9 +130,81 @@ def parse_model_output(output: str) -> dict:
     diff_match = re.search(r"<DIFF>(.*?)</DIFF>", output, re.DOTALL)
     explanation_match = re.search(r"<EXPLANATION>(.*?)</EXPLANATION>", output, re.DOTALL)
 
+    # Helper function to strip markdown code fences and language specifiers aggressively
+    def clean_code_block(content: str) -> str:
+        if not content:
+            return ""
+        
+        # 1. Strip leading/trailing whitespace
+        content = content.strip()
+        
+        # 2. Use regex to remove leading/trailing markdown fences (```) 
+        #    and optional language specifiers (python, diff, etc.)
+        # Remove leading ``` with optional language
+        content = re.sub(r"^\s*```[a-zA-Z]*\s*\n?", "", content, 1, re.MULTILINE) 
+        
+        # Remove trailing ```
+        content = re.sub(r"\n?\s*```\s*$", "", content, 1, re.MULTILINE) 
+        
+        return content.strip()
+
     # Extract and clean content
     parsed_output = {
-        # CRITICAL FIX: The LLM tends to put the content inside another code block.
-        # We must now strip the external code blocks that the LLM may introduce 
-        # based on the new explicit prompt example.
-        "fixed_code": fixed_code_match.group(1).strip().strip("
+        # Apply the aggressive cleaning function for code and diff
+        "fixed_code": clean_code_block(fixed_code_match.group(1)) if fixed_code_match else "Parsing Error: Fixed code not found.",
+        "diff": clean_code_block(diff_match.group(1)) if diff_match else "Parsing Error: Diff not found.",
+        "explanation": explanation_match.group(1).strip() if explanation_match else "Parsing Error: Explanation not found.",
+    }
+    
+    return parsed_output
+
+# --- Core Inference Function ---
+
+def run_inference(language: str, cwe: str, code: str) -> tuple[dict, int, int, float]:
+    """
+    Generates the fix using the loaded GGUF model via llama-cpp-python.
+
+    Returns:
+        tuple[dict, int, int, float]: (parsed_result, input_tokens, output_tokens, latency_ms)
+    """
+    
+    if llm_model is None:
+        logger.error("Attempted inference before model was successfully loaded.")
+        raise HTTPException(status_code=503, detail="LLM not loaded. Check model initialization logs.")
+
+    start_time = time.time()
+    
+    # 1. Create the prompt messages
+    messages = create_prompt_messages(language, cwe, code)
+    
+    # 2. Model Inference using chat completion endpoint
+    try:
+        # Llama-cpp-python's chat completion automatically handles the Mistral template
+        response = llm_model.create_chat_completion(
+            messages=messages,
+            max_tokens=768, # Increased max_tokens for the larger model and more detailed output
+            temperature=0.0, # Greedy decoding for deterministic code fixes
+            # Mistral models don't typically need an explicit stop sequence like Qwen, 
+            # but we can leave the default end-of-text marker.
+        )
+
+        # Extract the generated text
+        generated_text = response['choices'][0]['message']['content']
+        
+        # Extract token usage from the response metadata
+        token_usage = response['usage']
+        input_tokens = token_usage['prompt_tokens']
+        output_tokens = token_usage['completion_tokens']
+
+    except Exception as e:
+        logger.error(f"Inference failed with llama-cpp: {e}")
+        raise HTTPException(status_code=500, detail=f"LLM inference error: {e}")
+
+    # 3. Latency
+    end_time = time.time()
+    latency_ms = (end_time - start_time) * 1000
+
+    # 4. Parse the structured response
+    parsed_result = parse_model_output(generated_text)
+    
+    return parsed_result, input_tokens, output_tokens, latency_ms
