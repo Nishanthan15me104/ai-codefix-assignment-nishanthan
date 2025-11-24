@@ -1,0 +1,43 @@
+# fastapi==0.95.2
+# uvicorn==0.22.0
+# pydantic==1.10.12
+# torch
+# transformers
+# accelerate
+# starlette
+# typing_extensions
+# click
+# h11
+# anyio
+# sniffio
+# huggingface_hub
+# httpx
+# numpy
+# idna
+# tqdm
+# hf_xet
+
+# Core Microservice Dependencies
+
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.3
+requests==2.32.3
+
+# --- LLM INFERENCE DEPENDENCIES (Switched to GGUF) ---
+
+# Llama-cpp-python 
+
+# Note: For llama-cpp-python, you may need to install the library with specific
+
+# backend flags (e.g., pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir --verbose)
+
+llama-cpp-python==0.2.79
+
+# We keep huggingface-hub for programmatic downloading of the GGUF file.
+
+huggingface-hub==0.23.0
+
+
+sentence-transformers==2.7.0
+faiss-cpu==1.8.0
