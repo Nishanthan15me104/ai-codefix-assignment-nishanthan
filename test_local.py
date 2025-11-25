@@ -61,9 +61,10 @@ def run_test(case: dict):
     
     # --- Synchronous Request Logic ---
     start_time = time.time()
-    response = None
+    response = None # Initialize to None
     try:
-        # **UPDATED TIMEOUT: Reduced to 600.0 seconds (10 minutes)** # Anticipating much faster performance with GGUF.
+        # FIX: Ensure the assignment to 'response' is clearly separated.
+        # **UPDATED TIMEOUT: Reduced to 600.0 seconds (10 minutes)**
         response = requests.post(API_URL, json=case, timeout=600.0) 
         
         # This line will immediately raise an error if the connection fails or if the server returns 4xx/5xx
@@ -81,27 +82,33 @@ def run_test(case: dict):
         # Display core results clearly
         print(json.dumps({
             "model_used": data.get("model_used"),
-            "input_tokens": data.get("token_usage", {}).get("input_tokens"),
-            "output_tokens": data.get("token_usage", {}).get("output_tokens"),
+            "input_tokens": data.get("input_tokens"), 
+            "output_tokens": data.get("output_tokens"), 
             "server_latency_ms": f"{data.get('latency_ms'):.2f} ms",
         }, indent=4))
 
         print("\n[ FIXED CODE ]")
-        print(data.get("fixed_code"))
+        print(data.get("fixed_code", "CONTENT NOT RECEIVED/PARSED"))
 
         print("\n[ DIFF ]")
-        print(data.get("diff"))
+        print(data.get("diff", "CONTENT NOT RECEIVED/PARSED"))
         
         print("\n[ EXPLANATION ]")
-        print(data.get("explanation"))
+        print(data.get("explanation", "CONTENT NOT RECEIVED/PARSED"))
         
     except requests.exceptions.ConnectionError as e:
+        # This block catches the most common reason for the AttributeError (connection failure)
         logger.error(f"Connection Error: Is the Uvicorn server running? Details: {e}")
     except requests.exceptions.RequestException as e:
-        # Catches HTTPStatusError and TimeoutError
+        # Catches HTTPStatusError, TimeoutError, and other request issues
         logger.error(f"Request failed for {case['name']}: {e}")
         if response is not None and response.status_code == 503:
             logger.error("Error 503 (Service Unavailable): LLM might not be fully initialized on the server.")
+    except AttributeError:
+        # Explicitly catch the AttributeError just in case a response was partially created 
+        # or the request failed in an unusual way, and provide clear advice.
+        logger.error(f"FATAL CLIENT ERROR: AttributeError (NoneType on 'raise_for_status'). ")
+        logger.error(f"This strongly suggests the Uvicorn server is not running or crashed immediately upon startup.")
         
     print("\n" + "="*80) # Separator for test cases
 

@@ -1,2 +1,8 @@
 .venv
 .env
+qwen2.5-1.5b-instruct-q4_k_m.gguf
+mistral-7b-instruct-v0.2.Q4_K_M.gguf
+.huggingface
+starcoder2-3b-Q4_K_M.gguf
+deepseek-coder-1.3b-instruct.Q5_K_M.gguf
+starcoder2-3b-Q5_K_M.gguf
