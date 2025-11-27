@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # 1. The main application service (FastAPI)
   code-fix-service:
@@ -14,25 +16,26 @@ services:
       - LOG_LEVEL=INFO
     restart: unless-stopped
     
-    # Define a simple health check to tell the test runner when the service is ready
-    # NOTE: Since the model is now downloaded, the default timing should be sufficient.
+    # 💥 FIX: Extended health check to wait up to 30 minutes for model download/load
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      # Default: interval: 30s, timeout: 30s, retries: 3
+      interval: 10s       # Check every 10 seconds
+      timeout: 10s        # Wait 10 seconds for each check
+      retries: 180        # 180 retries * 10 seconds = 1800 seconds (30 minutes)
+      start_period: 20s   # Give the application process 20s to start
       
   # 2. A separate service to run the integration tests
   test-runner:
     build: .
-    # IMPORTANT FIX: Change the dependency condition to only wait for the container 
-    # to be *running*, not necessarily *healthy*. This lets the tests start quickly.
+    # 💥 FIX: Wait until the code-fix-service is reported as 'healthy'
+    # The 'healthy' state is only reached after the 30-minute healthcheck succeeds (model loaded).
     depends_on:
-      - code-fix-service
-      
+      code-fix-service:
+        condition: service_healthy
+        
     # Overrides the main CMD to run the test script instead
     command: /app/run_tests.sh
     environment:
       # Ensure tests have access to any necessary environment variables if required
       # - GEMINI_API_KEY=your_api_key_here
       - LOG_LEVEL=INFO
-    
-    # Removed logging block to use default console logging for simpler debugging
