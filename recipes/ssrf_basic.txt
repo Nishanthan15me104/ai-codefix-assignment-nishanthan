@@ -1,0 +1,11 @@
+CWE-918: Server-Side Request Forgery (SSRF) Fix Recipe
+SSRF allows an attacker to manipulate a server into making requests to an unintended destination (e.g., internal network resources, cloud metadata APIs).
+
+### FIX
+1. **Input Validation:** Do not blindly trust the URL provided by the user.
+2. **Enforce an Allow List (Whitelist):** This is the strongest defense. Only allow the URL to belong to a list of explicitly trusted domains/IPs.
+3. **Black List (Discouraged):** While tempting, a block list (e.g., blocking '127.0.0.1', '192.168.x.x') is easily bypassed using different IP formats (decimal, hexadecimal, DNS aliases).
+4. **Disable Redirects:** Ensure the HTTP client does not automatically follow redirects, as a malicious redirect can bypass allow-listing.
+5. **Enforce Scheme:** Only allow `https://` or `http://`. Block dangerous schemes like `file://`, `gopher://`, or `dict://`.
+
+**Best Practice:** Use a dedicated library function that resolves and validates the target IP *before* the request is made to ensure it is not a private/internal IP address.

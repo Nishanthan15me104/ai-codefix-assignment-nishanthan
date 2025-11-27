@@ -1,0 +1,14 @@
+CWE-89: SQL Injection Fix Recipe (Python, Java, etc.)
+The core defense against SQL Injection is **separation of code and data**. Never concatenate user-supplied input directly into an SQL query string.
+
+### FIX
+1. **Use Parameterized Queries (Prepared Statements):** Replace user input variables with placeholders (like `?` or `%s` in Python, or `?` in Java/JDBC) in the SQL query string.
+2. Pass the user input as a separate tuple/list of parameters to the database driver's `execute` method. The driver will safely handle the quoting and encoding.
+
+**Example (Python):**
+Vulnerable:
+cursor.execute(f"SELECT * FROM users WHERE username = '{username}'")
+
+Fixed:
+query = "SELECT * FROM users WHERE username = %s"
+cursor.execute(query, (username,))

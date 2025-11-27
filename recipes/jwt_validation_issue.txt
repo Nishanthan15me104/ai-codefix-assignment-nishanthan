@@ -1,0 +1,8 @@
+CWE-347: Improper Verification of Signature Fix Recipe (JWT)
+The security of a JSON Web Token (JWT) relies entirely on verifying its signature and validating its claims (exp, nbf, iss, aud). A common vulnerability is failing one or more of these checks.
+
+### FIX
+1. **Signature Verification (Most Critical):** Always verify the token's signature using the correct secret (for symmetric algorithms like HS256) or the corresponding public key (for asymmetric algorithms like RS256/ES256).
+2. **Algorithm Check:** Explicitly check that the algorithm in the token header (`alg`) is the one you expect (e.g., RS256). **CRITICAL:** Explicitly reject the `alg: None` value, which attackers use to bypass signature checks.
+3. **Expiration and Timing Claims:** Validate the `exp` (Expiration Time) and `nbf` (Not Before Time) claims to ensure the token is currently valid. Libraries handle time skew automatically.
+4. **Standard Library Use:** Use a well-maintained, battle-tested JWT library (e.g., `PyJWT` for Python, `java-jwt` for Java) and ensure you are calling the library's **verification** method, not just the **decode** method.

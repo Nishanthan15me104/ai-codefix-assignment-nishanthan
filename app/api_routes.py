@@ -1,3 +1,5 @@
+# app/api_routes.py
+
 import json
 import logging
 from fastapi import APIRouter
@@ -17,6 +19,7 @@ async def local_fix(request: FixRequest):
     """Analyzes vulnerable code and returns a secure fix, diff, and explanation."""
     
     # Run the core inference logic
+    # The run_inference function now handles RAG internally
     parsed_result, input_tokens, output_tokens, latency_ms = run_inference(
         request.language, 
         request.cwe, 
@@ -36,7 +39,6 @@ async def local_fix(request: FixRequest):
     logger.info(f"Remediation Log: {json.dumps(log_entry)}")
 
     # 2. Return the structured response
-    # Reference TokenUsage and FixResponse directly from the imported namespace
     return FixResponse(
         fixed_code=parsed_result["fixed_code"],
         diff=parsed_result["diff"],

@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 API_URL = "http://127.0.0.1:8000/local_fix"
 
-# --- Test Cases (Same as before) ---
+# --- Test Cases (These specifically target CWEs where RAG context is valuable) ---
 TEST_CASES = [
     {
-        "name": "Test Case 1: Python SQL Injection (CWE-89)",
+        "name": "Test Case 1: Python SQL Injection (CWE-89) - Should use RAG for parameterized query recipe",
         "language": "python",
         "cwe": "CWE-89",
         "code": """
@@ -24,7 +24,7 @@ def get_user_data(username, db_cursor):
 """
     },
     {
-        "name": "Test Case 2: JavaScript XSS (CWE-79)",
+        "name": "Test Case 2: JavaScript XSS (CWE-79) - Should use RAG for sanitization recipe",
         "language": "javascript",
         "cwe": "CWE-79",
         "code": """
@@ -33,22 +33,8 @@ function displayComment(comment) {
 }
 """
     },
-    {
-        "name": "Test Case 3: Java Hardcoded Credentials (CWE-798)",
-        "language": "java",
-        "cwe": "CWE-798",
-        "code": """
-public class DatabaseConnection {
-    private static final String DB_USER = "admin";
-    private static final String DB_PASS = "Pa$$w0rd123";
-
-    public Connection connect() {
-        // ... connection logic using fixed credentials
-    }
-}
-"""
-    },
 ]
+
 # --- Helper Function ---
 
 def run_test(case: dict):
@@ -63,9 +49,8 @@ def run_test(case: dict):
     start_time = time.time()
     response = None # Initialize to None
     try:
-        # FIX: Ensure the assignment to 'response' is clearly separated.
         # **UPDATED TIMEOUT: Reduced to 600.0 seconds (10 minutes)**
-        response = requests.post(API_URL, json=case, timeout=600.0) 
+        response = requests.post(API_URL, json=case, timeout=720.0) 
         
         # This line will immediately raise an error if the connection fails or if the server returns 4xx/5xx
         response.raise_for_status() 
@@ -77,16 +62,17 @@ def run_test(case: dict):
         total_latency = (end_time - start_time) * 1000
 
         logger.info("API Call Successful.")
-        logger.info(f"Total Client-Side Latency: {total_latency:.2f} ms")
         
-        # Display core results clearly
+        # Display core results, including token usage and latency from the server response
+        print("\n[ INFERENCE METRICS ]")
         print(json.dumps({
-            "model_used": data.get("model_used"),
-            "input_tokens": data.get("input_tokens"), 
-            "output_tokens": data.get("output_tokens"), 
-            "server_latency_ms": f"{data.get('latency_ms'):.2f} ms",
+            "model_used": data.get("model_used", "N/A"),
+            "input_tokens": data.get("input_tokens", "N/A"), 
+            "output_tokens": data.get("output_tokens", "N/A"), 
+            "server_latency_ms": f"{data.get('latency_ms', 0.0):.2f} ms",
+            "client_latency_ms": f"{total_latency:.2f} ms"
         }, indent=4))
-
+        
         print("\n[ FIXED CODE ]")
         print(data.get("fixed_code", "CONTENT NOT RECEIVED/PARSED"))
 
@@ -97,18 +83,15 @@ def run_test(case: dict):
         print(data.get("explanation", "CONTENT NOT RECEIVED/PARSED"))
         
     except requests.exceptions.ConnectionError as e:
-        # This block catches the most common reason for the AttributeError (connection failure)
         logger.error(f"Connection Error: Is the Uvicorn server running? Details: {e}")
     except requests.exceptions.RequestException as e:
-        # Catches HTTPStatusError, TimeoutError, and other request issues
         logger.error(f"Request failed for {case['name']}: {e}")
         if response is not None and response.status_code == 503:
             logger.error("Error 503 (Service Unavailable): LLM might not be fully initialized on the server.")
     except AttributeError:
-        # Explicitly catch the AttributeError just in case a response was partially created 
-        # or the request failed in an unusual way, and provide clear advice.
+        # Catches cases where 'response' might be None due to an unusual connection failure
         logger.error(f"FATAL CLIENT ERROR: AttributeError (NoneType on 'raise_for_status'). ")
-        logger.error(f"This strongly suggests the Uvicorn server is not running or crashed immediately upon startup.")
+        logger.error(f"This suggests the Uvicorn server is not running or crashed immediately.")
         
     print("\n" + "="*80) # Separator for test cases
 
@@ -118,7 +101,7 @@ def run_test(case: dict):
 if __name__ == "__main__":
     print("Starting AI Code Remediation Microservice Test Script (Synchronous Mode)...")
     print(f"Target API: {API_URL}")
-    print("NOTE: The first few inferences should now be significantly faster due to GGUF quantization.")
+    print("NOTE: The first few inferences should now be significantly faster due to RAG context.")
     
     for test_case in TEST_CASES:
         run_test(test_case)

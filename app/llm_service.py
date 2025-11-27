@@ -5,6 +5,11 @@ import os
 from fastapi import HTTPException
 from llama_cpp import Llama, llama_chat_format
 from huggingface_hub import hf_hub_download
+from typing import Optional
+
+# NEW: Import RAG retrieval function
+# NOTE: We assume 'initialize_rag' is called from main.py
+from app.rag_service import retrieve_context 
 
 # --- Configuration and Setup ---
 
@@ -23,7 +28,7 @@ MODEL_PATH = os.path.join(os.getcwd(), GGUF_MODEL_FILE)
 logger.info(f"Using default project root path for model: {MODEL_PATH}")
 
 
-# --- LLM Initialization ---
+# --- LLM Initialization (UNCHANGED) ---
 
 def initialize_llm():
     """
@@ -68,10 +73,10 @@ def initialize_llm():
         
         llm_model = Llama(
             model_path=MODEL_PATH,
-            n_ctx=4096,          # Context window kept high
-            n_gpu_layers=0,      # Force CPU only (0 layers)
-            verbose=False,       # Suppress Llama.cpp boilerplate logs
-            n_threads=6          # Threads kept high for performance
+            n_ctx=4096,  # Context window kept high
+            n_gpu_layers=0,# Force CPU only (0 layers)
+            verbose=False,# Suppress Llama.cpp boilerplate logs
+            n_threads=6 # Threads kept high for performance
         )
         
         logger.info("GGUF Model loaded successfully via llama-cpp-python.")
@@ -81,25 +86,17 @@ def initialize_llm():
         llm_model = None
 
 
-# --- Utility Function: Prompt Engineering ---
+# --- Utility Function: Prompt Engineering (CLEANED FOR RAG) ---
 
-def create_prompt_messages(language: str, cwe: str, code: str) -> list:
+# Signature is updated to accept rag_context (Optional[str])
+def create_prompt_messages(language: str, cwe: str, code: str, rag_context: Optional[str] = None) -> list:
     """
     Creates the structured instruction prompt for the LLM using the chat template.
+    It now uses RAG context and removes redundant hardcoded instructions.
     """
     
-    # Content-specific instruction based on observed failures:
-    content_instruction = ""
-    if cwe == "CWE-89" and language.lower() in ["python", "java"]:
-        content_instruction = (
-            "Crucially, for SQL Injection, you MUST use parameterized queries (placeholders, like %s or ?). "
-            "Do NOT use string concatenation or interpolation (f-strings). "
-            "The fixed code MUST call `db_cursor.execute` with the query string and a separate tuple of parameters."
-        )
-    elif cwe == "CWE-79" and language.lower() in ["javascript", "html"]:
-        content_instruction = "Crucially, for XSS, you MUST use properties like `.textContent` instead of `.innerHTML` to safely render user input as plain text."
-    elif cwe == "CWE-798" and language.lower() == "java":
-        content_instruction = "Crucially, for Hardcoded Credentials, you MUST remove the hardcoded secrets and replace them with a function call to retrieve secrets from a secure external source (e.g., environment variables or a configuration file). Do NOT simply add try-catch blocks."
+    # NOTE: The redundant hardcoded content_instruction logic has been removed 
+    # as the RAG context now provides this detailed guidance.
     
     # Universal Structure Instruction:
     system_prompt = (
@@ -107,7 +104,8 @@ def create_prompt_messages(language: str, cwe: str, code: str) -> list:
         "Your task is to analyze the provided vulnerable code snippet based on the CWE ID, "
         "generate a secure fixed version, explain the vulnerability and the fix, and provide a clear diff. "
         
-        f"{content_instruction} " 
+        # RAG INJECTION POINT: Inject the retrieved security recipe as strong guidance.
+        f"{rag_context if rag_context else ''}"
         
         "YOUR ENTIRE RESPONSE MUST STRICTLY USE ONLY THESE THREE XML TAGS, AND NOTHING ELSE. "
         "DO NOT include any introductory sentences, Markdown headings, bold text, or internal model response tokens like [/SYS] or similar template elements. "
@@ -133,7 +131,7 @@ def create_prompt_messages(language: str, cwe: str, code: str) -> list:
     
     return messages
 
-# --- Utility Function: Output Parsing ---
+# --- Utility Function: Output Parsing (UNCHANGED) ---
 
 def parse_model_output(output: str) -> dict:
     """
@@ -237,9 +235,9 @@ def parse_model_output(output: str) -> dict:
             
             # Only use it if it's substantial (more than 5 words)
             if len(candidate_explanation.split()) > 5:
-                 explanation = candidate_explanation.strip()
+                explanation = candidate_explanation.strip()
             else:
-                 explanation = "Parsing Error: Explanation not found."
+                explanation = "Parsing Error: Explanation not found."
 
 
     # --- FINAL CHECK AND ERROR REPORTING ---
@@ -257,12 +255,13 @@ def parse_model_output(output: str) -> dict:
     
     return parsed_output
 
-# --- Core Inference Function ---
+# --- Core Inference Function (UPDATED FOR RAG) ---
 
 def run_inference(language: str, cwe: str, code: str) -> tuple[dict, int, int, float]:
     """
-    Generates the fix using the loaded GGUF model via llama-cpp-python.
-
+    Generates the fix using the loaded GGUF model via llama-cpp-python, 
+    now integrating RAG context.
+    
     Returns:
         tuple[dict, int, int, float]: (parsed_result, input_tokens, output_tokens, latency_ms)
     """
@@ -273,16 +272,21 @@ def run_inference(language: str, cwe: str, code: str) -> tuple[dict, int, int, f
 
     start_time = time.time()
     
-    # 1. Create the prompt messages
-    messages = create_prompt_messages(language, cwe, code)
+    # 1. RAG Step: Retrieve context first
+    # This retrieves the relevant security recipe or returns None
+    rag_context = retrieve_context(cwe, code) 
     
-    # 2. Model Inference using chat completion endpoint
+    # 2. Create the prompt messages, passing the RAG context
+    # create_prompt_messages now accepts the optional rag_context parameter.
+    messages = create_prompt_messages(language, cwe, code, rag_context)
+    
+    # 3. Model Inference using chat completion endpoint
     try:
         # Llama-cpp-python's chat completion automatically handles the Qwen template
         response = llm_model.create_chat_completion(
             messages=messages,
-            # Keeping max_tokens high (2048) to ensure full XML structure completion
-            max_tokens=2048, 
+            # Keeping max_tokens high (4096 is good)
+            max_tokens=4096, 
             temperature=0.0, # Greedy decoding for deterministic code fixes
             # FIX: Added aggressive stop sequences to prevent the model from entering its template loop
             stop=["\n>>", "\n<|endoftext|>", "[/SYS]"], 
@@ -306,11 +310,11 @@ def run_inference(language: str, cwe: str, code: str) -> tuple[dict, int, int, f
         logger.error(f"Inference failed with llama-cpp: {e}")
         raise HTTPException(status_code=500, detail=f"LLM inference error: {e}")
 
-    # 3. Latency
+    # 4. Latency
     end_time = time.time()
     latency_ms = (end_time - start_time) * 1000
 
-    # 4. Parse the structured response
+    # 5. Parse the structured response
     parsed_result = parse_model_output(generated_text)
     
     return parsed_result, input_tokens, output_tokens, latency_ms

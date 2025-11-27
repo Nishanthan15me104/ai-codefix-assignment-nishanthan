@@ -1,0 +1,30 @@
+# Ignore version control artifacts
+.git
+.svn
+.DS_Store
+
+# Ignore Python specific files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/ # Ignore your local Python virtual environment
+venv/  # Another common name for virtual environments
+
+# Ignore build artifacts (useful if you compiled anything locally)
+dist/
+build/
+*.egg-info/
+
+# Ignore project-specific files
+*.env
+.vscode/
+
+.venv
+.env
+qwen2.5-1.5b-instruct-q4_k_m.gguf
+mistral-7b-instruct-v0.2.Q4_K_M.gguf
+.huggingface
+starcoder2-3b-Q4_K_M.gguf
+deepseek-coder-1.3b-instruct.Q5_K_M.gguf
+starcoder2-3b-Q5_K_M.gguf
