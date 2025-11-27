@@ -8,142 +8,46 @@ Project Structure
 
 The project is organized into a single Python package (app) and root files necessary for execution:
 
-.
-├── main.py             # Entry point (FastAPI App initialization)
-├── requirements.txt    # Project dependencies
-├── test_local.py       # Developer utility for local testing
-└── app/
-    ├── __init__.py     # Marks 'app' as a Python package
-    ├── api_routes.py   # Defines the POST /local_fix endpoint
-    ├── llm_service.py  # Handles LLM loading, prompting, and inference
-    └── models.py       # Pydantic schemas for request/response JSON
+```bash
+ai-codefix-assignment-nishanthan/
+│
+├── app/
+│   ├── __init__.py
+│   ├── api_routes.py
+│   ├── llm_service.py
+│   ├── models.py
+│   └── rag_service.py
+│
+├── .env
+├── .gitignore
+├── deepseek-coder-1.3b-instruct.Q5_K_M.gguf  # LLM Model File (example/downloaded)
+├── docker-compose.yml
+├── Dockerfile
+├── git_objects_sizes.txt
+├── main.py
+├── requirements.txt
+├── run_tests.sh
+├── test_local.py
+│
+└── recipes/  # Contains security fix guidance documents for RAG
+    └── ... (Text files, e.g., cwe-89_sql_injection.txt) schemas for request/response JSON
+```
+
+File	Location	Explanation
+main.py	Root	The entry point for the FastAPI application. It initializes the FastAPI app, includes the API router, and calls the critical initialize_llm() and initialize_rag() functions on startup.
+app/api_routes.py	app/	Defines the /local_fix API endpoint using FastAPI's APIRouter. It handles incoming fix requests, calls run_inference from llm_service.py, logs the token usage/latency metrics, and returns the structured FixResponse.
+app/llm_service.py	app/	Contains the core logic for the Large Language Model (LLM). It handles downloading and loading the GGUF model via llama-cpp-python, engineers the RAG-enhanced prompt, runs the chat completion inference, and includes robust logic to parse the structured XML output from the LLM.
+app/rag_service.py	app/	Implements the Retrieval-Augmented Generation (RAG) system. It uses Sentence-Transformers for embeddings and FAISS for fast vector search. It loads security recipes from the recipes/ directory and contains the retrieve_context function to find relevant guidance for a given CWE/code.
+app/models.py	app/	Defines the Pydantic schemas (FixRequest, TokenUsage, FixResponse) used for data validation and consistency across the API requests and responses.
+test_local.py	Root	A client script for running integration tests. It defines test cases (Python SQLI, JavaScript XSS), sends requests to the /local_fix endpoint, and prints the detailed results, including fixed code, diff, explanation, and performance metrics.
+docker-compose.yml	Root	Configuration file for defining and running the multi-container Docker application, including the code-fix-service (FastAPI/LLM) and the test-runner service.
+Dockerfile	Root	Instructions for building the Docker image, including installing Python dependencies and the complex compilation requirements for llama-cpp-python.
 
 
 1. Setup and Installation
 
 Prerequisites
 
-Python 3.10+
 
 A stable internet connection for initial model download (large file size).
 
-Step-by-Step Guide
-
-Create and Activate Virtual Environment:
-
-python -m venv .venv
-# On Windows:
-.\.venv\Scripts\activate
-# On Linux/macOS:
-source .venv/bin/activate
-
-
-Install Dependencies:
-
-pip install -r requirements.txt
-
-
-Start the Microservice:
-The service will automatically download and load the LLM during startup. This step might take several minutes the first time as the model weights are fetched.
-
-uvicorn main:app --reload
-
-
-(The service will be available at http://127.0.0.1:8000)
-
-2. Local Model Inference
-
-Model Used
-
-Feature
-
-Details
-
-Model Name
-
-Qwen/Qwen2.5-1.5B-Instruct
-
-Model Size
-
-1.5 Billion Parameters
-
-Inference Library
-
-Hugging Face transformers (AutoModelForCausalLM)
-
-Device Mapping
-
-Configured for CPU (device_map="cpu") for maximum compatibility, as requested by the assignment.
-
-Inference Type
-
-Greedy Decoding (do_sample=False) is used for deterministic and consistent code fixes.
-
-The model initialization is handled in the FastAPI startup hook (main.py -> initialize_llm()), ensuring the potentially slow model loading process does not block the API worker processes during runtime.
-
-3. API Functionality (POST /local_fix)
-
-The endpoint adheres strictly to the required input/output schema.
-
-Input JSON (FixRequest):
-
-{
-    "language": "java",
-    "cwe": "CWE-89",
-    "code": "..."
-}
-
-
-Output JSON (FixResponse):
-
-{
-    "fixed_code": "...",
-    "diff": "...",
-    "explanation": "...",
-    "model_used": "Qwen/Qwen2.5-1.5B-Instruct",
-    "token_usage": {
-        "input_tokens": 125,
-        "output_tokens": 350
-    },
-    "latency_ms": 12345.67
-}
-
-
-4. Prompt Design and Structured Output
-
-A structured instruction-following approach was used to ensure reliable and parsable output:
-
-System Prompt: Defines the model's persona (Expert Security Engineer) and the mandatory XML-like output format (<FIXED_CODE>, <DIFF>, <EXPLANATION>).
-
-User Query: Clearly separates the context (Language, CWE ID) from the code snippet.
-
-Parsing: The parse_model_output function in app/llm_service.py uses Regular Expressions (re.search) to robustly extract content between the defined XML-like tags, minimizing the risk of corrupted JSON output.
-
-5. Logging & Metrics
-
-The system logs all required metrics upon every successful call in app/api_routes.py:
-
-Input Token Count: Calculated via tokenizer.encode() before inference.
-
-Output Token Count: Calculated from the length of the generated IDs (output_ids.shape[0]).
-
-Latency: Time difference (time.time()) is captured from the start of the run_inference function to the completion of model parsing, reported in milliseconds (latency_ms).
-
-Log Destination: Logs are printed to the console using Python's standard logging library, formatted as JSON string for easy parsing/aggregation.
-
-6. Testing
-
-Run the provided testing script to send three distinct vulnerability examples to the service:
-
-python test_local.py
-
-
-7. Assumptions and Limitations
-
-Hardware Dependency (CPU): The solution is defaulted to CPU inference (device_map="cpu"). Performance (latency) will be very high for a 1.5B model on a standard CPU. For production use, or for larger models (7B+), a CUDA-enabled GPU setup would be mandatory.
-
-Model Availability: This solution assumes the evaluators have network access to download the Qwen/Qwen2.5-1.5B-Instruct weights from Hugging Face.
-
-Diff Tooling: The LLM is instructed to generate the diff. In a real-world scenario, a dedicated code analysis/diff library (like difflib in Python) would be used to calculate a precise, machine-verified diff for reliability.
-
-RAG Implementation: The optional RAG component was not implemented in this base version, focusing first on fulfilling all mandatory requirements with a robust foundation.

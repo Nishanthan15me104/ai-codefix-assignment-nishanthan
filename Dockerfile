@@ -3,17 +3,18 @@ FROM python:3.11-slim
 
 # Install necessary tools for the tests (curl for health check, bash)
 # AND install build essentials (gcc, g++, cmake, etc.) for llama-cpp-python compilation
+# NOTE: dos2unix is added here to fix line-ending issues for run_tests.sh
 RUN apt-get update && apt-get install -y curl bash
 
-# --- START OF FIX: Install Build Tools ---
+# --- START OF FIX: Install Build Tools and dos2unix ---
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     cmake \
     build-essential \
-    # Ensure any CUDA-related compilation dependencies are met (for llama-cpp-python)
-    # The default build usually targets CPU, but these ensure the environment is complete.
+    # Install dos2unix to ensure Unix-style (LF) line endings for shell scripts
+    dos2unix \ 
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 # --- END OF FIX ---
@@ -33,7 +34,12 @@ COPY recipes ./recipes
 # Copy the test runner script and the test client
 COPY run_tests.sh .
 COPY test_local.py .
+
+# 1. Ensure the script is executable
 RUN chmod +x run_tests.sh
+
+# 2. CRITICAL FIX: Convert Windows (CRLF) line endings to Linux (LF) for the shell script
+RUN dos2unix run_tests.sh
 
 # Expose the port that Uvicorn will run on
 EXPOSE 8000
