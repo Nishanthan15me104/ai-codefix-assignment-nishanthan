@@ -24,13 +24,21 @@ def get_user_data(username, db_cursor):
 """
     },
     {
-        "name": "Test Case 2: JavaScript XSS (CWE-79) - Should use RAG for sanitization recipe",
-        "language": "javascript",
-        "cwe": "CWE-79",
+        "name": "Test Case 2: Python SSRF (CWE-918) - Should use RAG for input validation and allow-listing recipe",
+        "language": "python",
+        "cwe": "CWE-918",
         "code": """
-function displayComment(comment) {
-    document.getElementById('output').innerHTML = comment;
-}
+import requests
+
+def fetch_external_resource(url):
+    # Vulnerable to SSRF if 'url' is controlled by user input (e.g., fetching internal IPs or file:// schemes)
+    try:
+        # Note: Setting 'allow_redirects=False' is one partial fix, but input validation is essential.
+        response = requests.get(url, timeout=5, allow_redirects=True) 
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        return str(e)
 """
     },
 ]
@@ -50,6 +58,7 @@ def run_test(case: dict):
     response = None # Initialize to None
     try:
         # **UPDATED TIMEOUT: Reduced to 600.0 seconds (10 minutes)**
+        # Note: The original request timeout was 720.0, keeping it robust.
         response = requests.post(API_URL, json=case, timeout=720.0) 
         
         # This line will immediately raise an error if the connection fails or if the server returns 4xx/5xx

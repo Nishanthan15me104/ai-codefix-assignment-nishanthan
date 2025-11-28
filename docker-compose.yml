@@ -10,10 +10,19 @@ services:
     # This port mapping is for external access (e.g., hitting http://localhost:8000/docs)
     ports:
       - "8000:8000"
+    volumes:
+      # Volume 1: Map the persistent volume for the vector database
+      - vector_db_data:/app/data/vector_db
+      # Volume 2: CRITICAL FIX: Map the persistent volume for the LLM model file
+      - model_data:/app/models 
     environment:
       # Define environment variables needed by your LLM/RAG service (e.g., API keys)
       # - GEMINI_API_KEY=your_api_key_here
       - LOG_LEVEL=INFO
+      # Define the path where the RAG service should look for/store the vector DB
+      - VECTOR_DB_PATH=/app/data/vector_db
+      # NEW: Define the persistent path for the GGUF model
+      - MODEL_DOWNLOAD_PATH=/app/models
     restart: unless-stopped
     
     # 💥 FIX: Extended health check to wait up to 30 minutes for model download/load
@@ -27,8 +36,12 @@ services:
   # 2. A separate service to run the integration tests
   test-runner:
     build: .
+    volumes:
+      # Mount the volume so the test runner can access the vector DB artifacts
+      - vector_db_data:/app/data/vector_db
+      # Map the model data volume (read-only access might be desirable, but standard is fine)
+      - model_data:/app/models 
     # 💥 FIX: Wait until the code-fix-service is reported as 'healthy'
-    # The 'healthy' state is only reached after the 30-minute healthcheck succeeds (model loaded).
     depends_on:
       code-fix-service:
         condition: service_healthy
@@ -36,6 +49,13 @@ services:
     # Overrides the main CMD to run the test script instead
     command: /app/run_tests.sh
     environment:
-      # Ensure tests have access to any necessary environment variables if required
-      # - GEMINI_API_KEY=your_api_key_here
       - LOG_LEVEL=INFO
+      - VECTOR_DB_PATH=/app/data/vector_db # Ensures tests know where to look
+      - MODEL_DOWNLOAD_PATH=/app/models # Ensures tests know where to look
+      # - GEMINI_API_KEY=your_api_key_here # Uncomment if needed for tests
+
+# Define the volumes for persistent storage
+volumes:
+  vector_db_data:
+  # NEW VOLUME: For the GGUF model file
+  model_data:
