@@ -67,6 +67,43 @@ docker compose up
 ```
 - note: takes more time for the first time (due to model download)
 
+#### step 3 to check test runner alone  
+
+
+
+## Sample output: 
+```bash
+ [STATUS] Sending request for Test Case 1: Python SQL Injection (CWE-89) - Should use RAG for parameterized query recipe... Awaiting response (Max 10 minutes timeout).
+test-runner-1  |
+test-runner-1  | [ INFERENCE METRICS ]
+test-runner-1  | {
+test-runner-1  |     "model_used": "second-state/StarCoder2-3B-GGUF",
+test-runner-1  |     "input_tokens": "N/A",
+test-runner-1  |     "output_tokens": "N/A",
+test-runner-1  |     "server_latency_ms": "249842.14 ms",
+test-runner-1  |     "client_latency_ms": "250253.08 ms"
+test-runner-1  | }
+test-runner-1  |
+test-runner-1  | [ FIXED CODE ]
+test-runner-1  | def get_user_data(username, db_cursor):
+test-runner-1  |     query = "SELECT * FROM users WHERE username = %s"
+test-runner-1  |     db_cursor.execute(query, (username,))
+test-runner-1  |     return db_cursor.fetchone()
+test-runner-1  |
+test-runner-1  | [ DIFF ]
+test-runner-1  | --- get_user_data.py   2019-08-30 15:46:47.000000000 -0400
+test-runner-1  | +++ get_user_data_fixed.py     2019-08-30 15:46:47.000000000 -0400
+test-runner-1  | @@ -1,5 +1,5 @@
+test-runner-1  |  def get_user_data(username, db_cursor):
+test-runner-1  |      query = "SELECT * FROM users WHERE username = %s"
+test-runner-1  | -    db_cursor.execute(query)
+test-runner-1  | +    db_cursor.execute(query, (username,))
+test-runner-1  |      return db_cursor.fetchone()
+test-runner-1  |
+test-runner-1  | [ EXPLANATION ]
+test-runner-1  | The vulnerable code is a SQL Injection attack. The vulnerability occurs because the user input is directly concatenated into an SQL query string. This allows for SQL injection attacks. To prevent this, we must use parameterized queries (prepared statements). We can do so by replacing user input variables with placeholders in the SQL query string.
+```
+
 ## Model and Inference Details
 
 | Component | Detail | Observation from Logs |

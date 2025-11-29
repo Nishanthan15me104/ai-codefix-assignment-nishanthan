@@ -77,7 +77,7 @@ def initialize_llm():
         llm_model = Llama(
             model_path=MODEL_PATH,
             n_ctx=4096,   # Context window kept high
-            n_gpu_layers=0,# Force CPU only (0 layers)
+            n_gpu_layers=0, # Force CPU only (0 layers)
             verbose=False, # Suppress Llama.cpp boilerplate logs
             n_threads=6 # Threads kept high for performance
         )
@@ -88,7 +88,7 @@ def initialize_llm():
         logger.error(f"Failed to load GGUF model: {e}")
         llm_model = None
 
-# --- Utility Function: Prompt Engineering (CLEANED FOR RAG) ---
+# --- Utility Function: Prompt Engineering (MODIFIED for better adherence) ---
 
 # Signature is updated to accept rag_context (Optional[str])
 def create_prompt_messages(language: str, cwe: str, code: str, rag_context: Optional[str] = None) -> list:
@@ -118,7 +118,9 @@ def create_prompt_messages(language: str, cwe: str, code: str, rag_context: Opti
         "DO NOT include any introductory sentences, Markdown headings (like # or ##), bold text (like **), or internal model response tokens like [/SYS] or similar template elements. "
         "The three tags are: <FIXED_CODE>...fixed code...</FIXED_CODE>, <DIFF>...standard diff...</DIFF>, and <EXPLANATION>...text explanation...</EXPLANATION>. "
         "The DIFF should contain lines showing old code and new code changes, prefixed with '-' and '+'. "
-        "YOUR RESPONSE MUST BEGIN WITH THE <FIXED_CODE> TAG."
+        
+        # IMPROVEMENT 1: Final instruction to force stopping.
+        "YOUR RESPONSE MUST BEGIN WITH THE <FIXED_CODE> TAG. AFTER THE CLOSING </EXPLANATION> TAG, YOU MUST STOP GENERATING TEXT."
     )
     
     # User query containing the context and the vulnerable code
@@ -128,7 +130,9 @@ def create_prompt_messages(language: str, cwe: str, code: str, rag_context: Opti
         f"- CWE ID: {cwe}\n"
         f"\n"
         f"Vulnerable Code to Fix:\n"
-        f"```\n{code.strip()}\n```"
+        f"```\n{code.strip()}\n```\n"
+        # IMPROVEMENT 2: Immediate output guide
+        f"Please provide your fix and explanation now by starting with the <FIXED_CODE> tag."
     )
 
     messages = [
@@ -138,13 +142,20 @@ def create_prompt_messages(language: str, cwe: str, code: str, rag_context: Opti
     
     return messages
 
-# --- Utility Function: Output Parsing (UNCHANGED) ---
+# --- Utility Function: Output Parsing (MODIFIED for aggressive cleanup) ---
 
 def parse_model_output(output: str) -> dict:
     """
     Parses the structured output from the LLM based on defined tags, 
     with robust fallback mechanisms for missing closing tags or Markdown headers.
     """
+    
+    # IMPROVEMENT 3: Aggressively strip any conversational preamble text before the XML block.
+    start_tag = "<FIXED_CODE>"
+    start_index = output.find(start_tag)
+    if start_index != -1:
+        # Keep the output from the start of the first tag found.
+        output = output[start_index:] 
     
     flags = re.DOTALL | re.IGNORECASE
     fixed_code = "Parsing Error: Fixed code not found."
@@ -299,11 +310,14 @@ def run_inference(language: str, cwe: str, code: str) -> tuple[dict, int, int, f
         # Extract the generated text
         generated_text = response['choices'][0]['message']['content']
         
-        # --- DEBUGGING STEP ---
+        # --- DEBUGGING STEP (Ensures LLM Output is Printed) ---
         logger.info("\n--- RAW LLM OUTPUT START (For Debugging Parser) ---")
-        logger.info(generated_text) # <--- THIS LINE PRINTS THE UNMODIFIED LLM RESPONSE
+        # Use print() instead of logger.info() for the main content to avoid logging formatting issues 
+        # with newlines, which can sometimes break log parsers (though logger.info is generally fine). 
+        # Sticking with logger.info as defined, but making sure it's clear.
+        logger.info(generated_text) 
         logger.info("--- RAW LLM OUTPUT END ---\n")
-        # ----------------------
+        # -----------------------------------------------------
         
         # Extract token usage from the response metadata
         token_usage = response['usage']
